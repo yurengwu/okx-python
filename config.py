@@ -48,3 +48,17 @@ class Config:
     # Server酱通知配置
     SERVERCHAN_SENDKEY = os.getenv('SERVERCHAN_SENDKEY', '')  # Server酱SendKey
     ENABLE_SERVERCHAN_NOTIFICATION = os.getenv('ENABLE_SERVERCHAN_NOTIFICATION', 'False').lower() == 'true'
+    
+    # WebSocket实时监控配置
+    ENABLE_WEBSOCKET_MONITOR = os.getenv('ENABLE_WEBSOCKET_MONITOR', 'False').lower() == 'true'
+    WEBSOCKET_URL = os.getenv('WEBSOCKET_URL', 'wss://ws.okx.com:8443/ws/v5/public')
+    
+    # 波动率检测配置
+    VOLATILITY_THRESHOLD = float(os.getenv('VOLATILITY_THRESHOLD', '2.5'))  # Z-score阈值
+    VOLATILITY_WINDOW_SIZE = int(os.getenv('VOLATILITY_WINDOW_SIZE', '20'))  # 滑动窗口大小
+    VOLUME_SPIKE_MULTIPLIER = float(os.getenv('VOLUME_SPIKE_MULTIPLIER', '3.0'))  # 成交量异常倍数
+    
+    # 实时警报配置
+    ALERT_COOLDOWN_MINUTES = int(os.getenv('ALERT_COOLDOWN_MINUTES', '5'))  # 警报冷却时间（分钟）
+    ENABLE_VOLATILITY_ALERTS = os.getenv('ENABLE_VOLATILITY_ALERTS', 'True').lower() == 'true'
+    ENABLE_VOLUME_ALERTS = os.getenv('ENABLE_VOLUME_ALERTS', 'True').lower() == 'true'

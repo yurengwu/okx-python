@@ -15,6 +15,7 @@ from config import Config
 from trading_analyzer import TradingAnalyzer
 from scheduler import TradingScheduler
 from ip_detector import IPDetector
+from websocket_monitor import WebSocketMonitor
 
 def setup_logging():
     """设置日志配置"""
@@ -314,11 +315,13 @@ def interactive_mode():
     print("  7 - 检查IP白名单状态")
     print("  8 - 监控IP变化")
     print("  9 - 测试Server酱通知")
+    print("  10 - 启动WebSocket实时监控")
+    print("  11 - 测试WebSocket连接")
     print("  q - 退出")
     
     while True:
         try:
-            choice = input("\n请选择操作 (1-9, q): ").strip().lower()
+            choice = input("\n请选择操作 (1-11, q): ").strip().lower()
             
             if choice == '1':
                 run_single_analysis()
@@ -338,6 +341,10 @@ def interactive_mode():
                 monitor_ip_changes()
             elif choice == '9':
                 test_serverchan_notification()
+            elif choice == '10':
+                run_websocket_monitor()
+            elif choice == '11':
+                test_websocket_connection()
             elif choice == 'q':
                 print("\n👋 再见!")
                 break
@@ -349,6 +356,72 @@ def interactive_mode():
             break
         except Exception as e:
             print(f"\n❌ 操作失败: {e}")
+
+def run_websocket_monitor():
+    """启动WebSocket实时监控"""
+    try:
+        if not Config.ENABLE_WEBSOCKET_MONITOR:
+            print("\n⚠️  WebSocket监控未启用")
+            print("请在.env文件中设置 ENABLE_WEBSOCKET_MONITOR=true")
+            return
+            
+        if not Config.SERVERCHAN_SENDKEY:
+            print("\n⚠️  未配置Server酱通知")
+            print("WebSocket监控需要Server酱来发送实时警报")
+            return
+            
+        print("\n🔄 启动WebSocket实时监控系统...")
+        print(f"监控交易对: {', '.join(Config.TRADING_PAIRS)}")
+        print(f"波动率阈值: {Config.VOLATILITY_THRESHOLD}")
+        print(f"成交量异常倍数: {Config.VOLUME_SPIKE_MULTIPLIER}")
+        print("\n按 Ctrl+C 停止监控\n")
+        
+        monitor = WebSocketMonitor()
+        
+        # 在线程中运行监控
+        import asyncio
+        asyncio.run(monitor.start_monitoring())
+        
+    except KeyboardInterrupt:
+        print("\n\n🛑 收到停止信号，正在关闭监控系统...")
+    except Exception as e:
+        logger.error(f"WebSocket监控启动失败: {e}")
+        print(f"\n❌ WebSocket监控启动失败: {e}")
+
+def test_websocket_connection():
+    """测试WebSocket连接"""
+    try:
+        print("\n🔄 测试WebSocket连接...")
+        
+        monitor = WebSocketMonitor()
+        
+        import asyncio
+        async def test_connection():
+            success = await monitor.connect_websocket()
+            if success:
+                print("✅ WebSocket连接测试成功")
+                print(f"连接地址: {monitor.ws_url}")
+                print(f"订阅交易对: {len(monitor.symbols)} 个")
+                
+                # 接收几条消息测试
+                print("\n📡 接收测试数据...")
+                count = 0
+                async for message in monitor.websocket:
+                    count += 1
+                    print(f"收到消息 {count}: {message[:100]}...")
+                    if count >= 3:
+                        break
+                        
+                await monitor.websocket.close()
+                print("\n✅ WebSocket功能测试完成")
+            else:
+                print("❌ WebSocket连接测试失败")
+                
+        asyncio.run(test_connection())
+        
+    except Exception as e:
+        logger.error(f"WebSocket连接测试失败: {e}")
+        print(f"\n❌ WebSocket连接测试失败: {e}")
 
 def main():
     """主函数"""
@@ -366,6 +439,8 @@ def main():
   python main.py --ip-whitelist     # 检查IP白名单状态
   python main.py --ip-monitor       # 监控IP变化
   python main.py --test-serverchan  # 测试Server酱通知
+  python main.py --websocket        # 启动WebSocket实时监控
+  python main.py --test-websocket   # 测试WebSocket连接
   python main.py                    # 交互模式
         """
     )
@@ -379,6 +454,8 @@ def main():
     parser.add_argument('--ip-whitelist', action='store_true', help='检查IP白名单状态')
     parser.add_argument('--ip-monitor', action='store_true', help='监控IP变化')
     parser.add_argument('--test-serverchan', action='store_true', help='测试Server酱通知')
+    parser.add_argument('--websocket', action='store_true', help='启动WebSocket实时监控')
+    parser.add_argument('--test-websocket', action='store_true', help='测试WebSocket连接')
     parser.add_argument('--version', action='version', version='OKX Trading Analyzer v1.0.0')
     
     args = parser.parse_args()
@@ -411,6 +488,10 @@ def main():
         monitor_ip_changes()
     elif getattr(args, 'test_serverchan', False):
         test_serverchan_notification()
+    elif args.websocket:
+        run_websocket_monitor()
+    elif getattr(args, 'test_websocket', False):
+        test_websocket_connection()
     else:
         # 默认进入交互模式
         interactive_mode()

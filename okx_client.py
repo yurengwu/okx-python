@@ -164,6 +164,41 @@ class OKXClient:
             logger.error(f"验证交易对 {symbol} 失败: {e}")
             return False
     
+    def get_instruments(self, inst_type: str = 'SWAP') -> List[Dict]:
+        """获取交易工具信息"""
+        try:
+            # 使用OKX的公共API获取交易工具信息
+            response = self.exchange.public_get_public_instruments({
+                'instType': inst_type
+            })
+            
+            if response.get('code') == '0':
+                return response.get('data', [])
+            else:
+                logger.error(f"获取交易工具失败: {response.get('msg', 'Unknown error')}")
+                return []
+                
+        except Exception as e:
+            logger.error(f"获取交易工具信息失败: {e}")
+            # 备用方法：使用ccxt的load_markets
+            try:
+                markets = self.exchange.load_markets()
+                instruments = []
+                for symbol, market in markets.items():
+                    if market.get('type') == inst_type.lower():
+                        instruments.append({
+                            'instId': symbol,
+                            'instType': inst_type,
+                            'baseCcy': market.get('base'),
+                            'quoteCcy': market.get('quote'),
+                            'settleCcy': market.get('settle'),
+                            'state': 'live' if market.get('active') else 'suspend'
+                        })
+                return instruments
+            except Exception as e2:
+                logger.error(f"备用方法也失败: {e2}")
+                return []
+    
     def get_exchange_info(self) -> Dict:
         """获取交易所基本信息"""
         try:
