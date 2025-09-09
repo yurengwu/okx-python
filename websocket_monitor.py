@@ -72,7 +72,10 @@ class VolatilityDetector:
                 if std_change > 0:
                     z_score = abs((price_change - mean_change) / std_change)
                     
-                    if z_score > self.volatility_threshold:
+                    # 添加最小变化幅度过滤：价格变化必须大于0.1%才考虑发送警报
+                    min_change_threshold = 0.1  # 最小变化幅度0.1%
+                    
+                    if z_score > self.volatility_threshold and abs(price_change) > min_change_threshold:
                         return PriceAlert(
                             symbol=symbol,
                             alert_type='volatility',
