@@ -48,17 +48,27 @@ class ServerChanNotifier:
         if short:
             data["short"] = short
             
+        # 添加调试信息
+        logger.info(f"准备发送Server酱通知: 标题长度={len(title)}, 内容长度={len(content)}")
+        
+        # 检查内容中的交易对数量
+        pair_count = content.count('## 📊 【')
+        logger.info(f"通知内容包含 {pair_count} 个交易对")
+            
         try:
             response = requests.post(url, data=data, timeout=10)
             result = response.json()
             
+            # 记录完整的响应信息
+            logger.info(f"Server酱响应: {result}")
+            
             if result.get("code") == 0:
                 logger.info(f"Server酱通知发送成功: {title}")
-                return {"success": True, "message": "通知发送成功"}
+                return {"success": True, "message": "通知发送成功", "response": result}
             else:
                 error_msg = result.get("message", "未知错误")
                 logger.error(f"Server酱通知发送失败: {error_msg}")
-                return {"success": False, "error": error_msg}
+                return {"success": False, "error": error_msg, "response": result}
                 
         except requests.exceptions.RequestException as e:
             logger.error(f"Server酱通知发送异常: {e}")
@@ -234,11 +244,9 @@ class ServerChanNotifier:
                     f"- **平均信心度:** {avg_confidence:.1f}/10 💪"
                 ])
         
-        content = "\n".join(content_lines)
-        return title, content
-        
         # 添加风险提示
         content_lines.extend([
+            "",
             "### ⚠️ 风险提示",
             "- 本分析仅供参考，不构成投资建议",
             "- 加密货币投资存在高风险，请谨慎操作",
