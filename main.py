@@ -378,12 +378,21 @@ def run_websocket_monitor():
         
         monitor = WebSocketMonitor()
         
-        # 在线程中运行监控
+        # 定义异步主函数
+        async def websocket_main():
+            try:
+                await monitor.start_monitoring()
+            except KeyboardInterrupt:
+                print("\n\n🛑 收到停止信号，正在关闭监控系统...")
+                monitor.stop_monitoring()
+                await monitor.close_websocket()
+        
+        # 运行监控
         import asyncio
-        asyncio.run(monitor.start_monitoring())
+        asyncio.run(websocket_main())
         
     except KeyboardInterrupt:
-        print("\n\n🛑 收到停止信号，正在关闭监控系统...")
+        print("\n\n🛑 程序已安全退出")
     except Exception as e:
         logger.error(f"WebSocket监控启动失败: {e}")
         print(f"\n❌ WebSocket监控启动失败: {e}")
@@ -396,6 +405,8 @@ def test_websocket_connection():
         monitor = WebSocketMonitor()
         
         import asyncio
+        import signal
+        
         async def test_connection():
             success = await monitor.connect_websocket()
             if success:
@@ -406,18 +417,48 @@ def test_websocket_connection():
                 # 接收几条消息测试
                 print("\n📡 接收测试数据...")
                 count = 0
-                async for message in monitor.websocket:
-                    count += 1
-                    print(f"收到消息 {count}: {message[:100]}...")
-                    if count >= 3:
-                        break
+                try:
+                    async for message in monitor.websocket:
+                        count += 1
+                        print(f"收到消息 {count}: {message[:100]}...")
+                        if count >= 3:
+                            break
+                except asyncio.CancelledError:
+                    pass
                         
-                await monitor.websocket.close()
+                await monitor.close_websocket()
                 print("\n✅ WebSocket功能测试完成")
             else:
                 print("❌ WebSocket连接测试失败")
-                
-        asyncio.run(test_connection())
+        
+        # 创建事件循环并设置信号处理
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        def signal_handler():
+            print("\n\n🛑 测试被用户中断")
+            for task in asyncio.all_tasks(loop):
+                task.cancel()
+        
+        # 在Windows上使用不同的信号处理方式
+        try:
+            if hasattr(signal, 'SIGINT'):
+                loop.add_signal_handler(signal.SIGINT, signal_handler)
+        except NotImplementedError:
+            # Windows不支持add_signal_handler
+            pass
+        
+        try:
+            loop.run_until_complete(test_connection())
+        except KeyboardInterrupt:
+            print("\n\n🛑 测试被用户中断")
+            # 确保WebSocket连接被关闭
+            try:
+                loop.run_until_complete(monitor.close_websocket())
+            except:
+                pass
+        finally:
+            loop.close()
         
     except Exception as e:
         logger.error(f"WebSocket连接测试失败: {e}")

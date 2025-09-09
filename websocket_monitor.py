@@ -326,13 +326,22 @@ class WebSocketMonitor:
                 logger.error(f"WebSocket监控异常: {e}")
                 await asyncio.sleep(10)
                 
+        # 安全关闭WebSocket连接
+        await self.close_websocket()
         logger.info("WebSocket监控系统已停止")
         
     def stop_monitoring(self):
         """停止监控"""
         self.is_running = False
-        if self.websocket:
-            asyncio.create_task(self.websocket.close())
+        
+    async def close_websocket(self):
+        """安全关闭WebSocket连接"""
+        if self.websocket and not self.websocket.closed:
+            try:
+                await self.websocket.close()
+                logger.info("WebSocket连接已安全关闭")
+            except Exception as e:
+                logger.warning(f"关闭WebSocket连接时出现异常: {e}")
             
     def run_in_thread(self):
         """在线程中运行监控"""
@@ -349,8 +358,15 @@ if __name__ == "__main__":
     # 测试WebSocket监控
     monitor = WebSocketMonitor()
     
+    async def main():
+        try:
+            await monitor.start_monitoring()
+        except KeyboardInterrupt:
+            logger.info("收到停止信号，正在关闭监控系统...")
+            monitor.stop_monitoring()
+            await monitor.close_websocket()
+    
     try:
-        asyncio.run(monitor.start_monitoring())
+        asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("收到停止信号，正在关闭监控系统...")
-        monitor.stop_monitoring()
+        logger.info("程序已安全退出")
