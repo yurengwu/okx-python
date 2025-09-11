@@ -235,6 +235,25 @@ class TradingDatabase:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 
+                # 处理take_profit数据类型
+                take_profit = analysis.get('take_profit')
+                if isinstance(take_profit, list) and take_profit:
+                    # 如果是列表，取第一个目标价格
+                    take_profit_value = take_profit[0]
+                elif isinstance(take_profit, (int, float)):
+                    take_profit_value = take_profit
+                else:
+                    take_profit_value = None
+                
+                # 处理confidence数据类型（转换为整数百分比）
+                confidence = analysis.get('confidence')
+                if isinstance(confidence, float):
+                    confidence_value = int(confidence * 100)  # 转换为百分比整数
+                elif isinstance(confidence, int):
+                    confidence_value = confidence
+                else:
+                    confidence_value = None
+                
                 cursor.execute("""
                     INSERT INTO analysis_results 
                     (symbol, timestamp, action, entry_price, stop_loss, take_profit,
@@ -247,9 +266,9 @@ class TradingDatabase:
                     analysis.get('action'),
                     analysis.get('entry_price'),
                     analysis.get('stop_loss'),
-                    analysis.get('take_profit'),
+                    take_profit_value,
                     analysis.get('risk_level'),
-                    analysis.get('confidence'),
+                    confidence_value,
                     json.dumps(analysis.get('support_levels', [])),
                     json.dumps(analysis.get('resistance_levels', [])),
                     analysis.get('analysis'),
@@ -419,6 +438,16 @@ class TradingDatabase:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 
+                # 处理take_profit数据类型
+                take_profit = signal.get('take_profit', 0)
+                if isinstance(take_profit, list) and take_profit:
+                    # 如果是列表，取第一个目标价格
+                    take_profit_value = take_profit[0]
+                elif isinstance(take_profit, (int, float)):
+                    take_profit_value = take_profit
+                else:
+                    take_profit_value = 0
+                
                 cursor.execute("""
                     INSERT INTO trading_signals 
                     (symbol, signal_time, signal_type, entry_price, stop_loss, 
@@ -430,7 +459,7 @@ class TradingDatabase:
                     signal.get('action', 'HOLD').lower(),
                     signal.get('entry_price', 0),
                     signal.get('stop_loss', 0),
-                    signal.get('take_profit', 0),
+                    take_profit_value,
                     'open'
                 ))
                 

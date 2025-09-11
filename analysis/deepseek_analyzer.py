@@ -180,8 +180,10 @@ class DeepSeekAnalyzer:
                     
                     if batch_result and 'recommendations' in batch_result:
                         all_recommendations.update(batch_result['recommendations'])
-                        if batch_result.get('market_overview'):
-                            market_overview_parts.append(batch_result['market_overview'])
+                        # 只添加有效的market_overview，过滤掉错误信息
+                        market_overview = batch_result.get('market_overview', '')
+                        if market_overview and not any(error_text in market_overview for error_text in ['JSON解析失败', '分析格式解析失败']):
+                            market_overview_parts.append(market_overview)
                     
                     # 添加延迟避免API限制
                     import time
@@ -286,16 +288,43 @@ class DeepSeekAnalyzer:
             
             # 尝试解析JSON
             try:
+                # 记录原始响应用于调试
+                logger.debug(f"DeepSeek原始响应: {analysis_text[:500]}...")
+                
                 # 提取JSON部分
                 json_start = analysis_text.find('{')
                 json_end = analysis_text.rfind('}') + 1
                 
                 if json_start != -1 and json_end != -1:
                     json_str = analysis_text[json_start:json_end]
-                    analysis_result = json.loads(json_str)
                     
-                    logger.info(f"DeepSeek分析完成，返回{len(analysis_result.get('recommendations', {}))}个交易对的分析")
-                    return analysis_result
+                    # 尝试清理JSON字符串
+                    json_str = self._clean_json_string(json_str)
+                    
+                    try:
+                        analysis_result = json.loads(json_str)
+                        logger.info(f"DeepSeek分析完成，返回{len(analysis_result.get('recommendations', {}))}个交易对的分析")
+                        return analysis_result
+                    except json.JSONDecodeError as json_error:
+                        logger.error(f"JSON解析失败: {json_error}")
+                        logger.error(f"问题JSON片段: {json_str[max(0, json_error.pos-50):json_error.pos+50]}")
+                        
+                        # 尝试修复常见的JSON格式问题
+                        fixed_json = self._fix_json_format(json_str)
+                        if fixed_json:
+                            try:
+                                analysis_result = json.loads(fixed_json)
+                                logger.info("JSON修复成功，继续处理")
+                                return analysis_result
+                            except:
+                                pass
+                        
+                        return {
+                            "analysis_time": pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S'),
+                            "market_overview": f"JSON解析失败: {str(json_error)}",
+                            "raw_analysis": analysis_text,
+                            "recommendations": {}
+                        }
                 else:
                     logger.warning("无法从响应中提取JSON格式")
                     return {
@@ -305,11 +334,11 @@ class DeepSeekAnalyzer:
                         "recommendations": {}
                     }
                     
-            except json.JSONDecodeError as e:
-                logger.error(f"JSON解析失败: {e}")
+            except Exception as e:
+                logger.error(f"JSON处理异常: {e}")
                 return {
                     "analysis_time": pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    "market_overview": "JSON解析失败",
+                    "market_overview": "JSON处理异常",
                     "raw_analysis": analysis_text,
                     "recommendations": {}
                 }
@@ -318,7 +347,50 @@ class DeepSeekAnalyzer:
             logger.error(f"DeepSeek批量分析失败: {e}")
             return None
 
+    def _clean_json_string(self, json_str: str) -> str:
+        """清理JSON字符串，移除常见的格式问题"""
+        try:
+            # 移除可能的markdown代码块标记
+            json_str = json_str.replace('```json', '').replace('```', '')
+            
+            # 移除多余的空白字符
+            json_str = json_str.strip()
+            
+            # 移除可能的BOM标记
+            if json_str.startswith('\ufeff'):
+                json_str = json_str[1:]
+            
+            return json_str
+        except Exception as e:
+            logger.warning(f"JSON清理失败: {e}")
+            return json_str
     
+    def _fix_json_format(self, json_str: str) -> str:
+        """尝试修复常见的JSON格式问题"""
+        try:
+            import re
+            
+            # 修复常见的JSON格式问题
+            # 1. 修复缺少逗号的问题
+            json_str = re.sub(r'(\w+)\s*:\s*([^,}\]]+)\s*([}\]])', r'\1: \2,\3', json_str)
+            
+            # 2. 修复多余逗号的问题
+            json_str = re.sub(r',\s*([}\]])', r'\1', json_str)
+            
+            # 3. 修复未引用的键名
+            json_str = re.sub(r'([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1"\2":', json_str)
+            
+            # 4. 修复单引号问题
+            json_str = json_str.replace("'", '"')
+            
+            # 5. 修复换行符问题
+            json_str = json_str.replace('\n', '\\n').replace('\r', '\\r')
+            
+            return json_str
+        except Exception as e:
+            logger.warning(f"JSON修复失败: {e}")
+            return None
+
     def format_analysis_output(self, analysis: Dict) -> str:
         """格式化增强分析输出"""
         if not analysis or 'recommendations' not in analysis:

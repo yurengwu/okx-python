@@ -497,8 +497,28 @@ class WebSocketMonitor:
         """处理ticker数据"""
         try:
             symbol = ticker['instId']
-            price = float(ticker['last'])
-            volume = float(ticker['vol24h'])
+            
+            # 打印原始ticker数据用于调试
+            logger.debug(f"{symbol} 原始ticker数据: {json.dumps(ticker, indent=2)}")
+            
+            # 安全地转换价格和成交量，处理空字符串情况
+            last_price = ticker.get('last', '')
+            vol_24h = ticker.get('vol24h', '')
+            
+            if not last_price or last_price == '':
+                logger.warning(f"{symbol} 价格数据为空，原始数据: last='{last_price}', 完整ticker: {ticker}")
+                return
+                
+            if not vol_24h or vol_24h == '':
+                logger.warning(f"{symbol} 成交量数据为空，原始数据: vol24h='{vol_24h}', 完整ticker: {ticker}")
+                return
+                
+            try:
+                price = float(last_price)
+                volume = float(vol_24h)
+            except (ValueError, TypeError) as e:
+                logger.error(f"{symbol} 数据转换失败: last={last_price}, vol24h={vol_24h}, 错误: {e}")
+                return
             
             # 存储ticker数据供24H涨跌幅计算使用
             if not hasattr(self, 'ticker_data'):
