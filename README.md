@@ -11,6 +11,12 @@
 - **详细建议**: 提供具体的买入/卖出点位和风险评估
 - **历史记录**: 保存分析历史，支持回顾和对比
 - **风险管理**: 内置止损止盈建议和风险等级评估
+- **WebSocket监控**: 实时监控交易数据变化
+- **通知推送**: 支持Server酱微信通知
+- **技术指标**: 增强的技术指标计算和分析
+- **预测模型**: 机器学习预测模型
+- **胜率分析**: 交易策略胜率统计分析
+- **模块化设计**: 清晰的代码结构，便于维护和扩展
 
 ## 📋 系统要求
 
@@ -56,6 +62,13 @@ OKX_SANDBOX=False
 # DeepSeek API配置
 DEEPSEEK_API_KEY=your_deepseek_api_key_here
 DEEPSEEK_BASE_URL=https://api.deepseek.com
+
+# Server酱通知配置（可选）
+SERVER_CHAN_KEY=your_server_chan_key_here
+
+# WebSocket监控配置（可选）
+WEBSOCKET_ENABLED=True
+WEBSOCKET_SYMBOLS=BTC-USDT-SWAP,ETH-USDT-SWAP
 ```
 
 ## 🔑 API密钥获取
@@ -75,6 +88,20 @@ DEEPSEEK_BASE_URL=https://api.deepseek.com
 3. 进入API管理页面
 4. 创建新的API密钥
 5. 复制API密钥
+
+### Server酱通知密钥（可选）
+
+1. 访问 [Server酱官网](https://sct.ftqq.com/)
+2. 使用微信扫码登录
+3. 创建新的SendKey
+4. 复制SendKey到配置文件
+5. 详细配置请参考 `SERVER_CHAN_GUIDE.md`
+
+### WebSocket监控配置（可选）
+
+1. 在 `.env` 文件中启用WebSocket监控
+2. 配置要监控的交易对
+3. 详细配置请参考 `WEBSOCKET_GUIDE.md`
 
 ## 🎯 使用方法
 
@@ -112,6 +139,46 @@ python main.py
 - 实时查看分析结果
 - 管理定时任务
 
+### 模块化使用
+
+由于采用了模块化设计，你也可以单独使用各个模块：
+
+```python
+# 使用交易分析器
+from trading.trading_analyzer import TradingAnalyzer
+analyzer = TradingAnalyzer()
+
+# 使用WebSocket监控
+from monitoring.websocket_monitor import WebSocketMonitor
+monitor = WebSocketMonitor()
+
+# 使用AI分析器
+from analysis.deepseek_analyzer import DeepSeekAnalyzer
+ai_analyzer = DeepSeekAnalyzer()
+
+# 使用数据库操作
+from core.database import TradingDatabase
+db = TradingDatabase()
+```
+
+### 辅助脚本
+
+项目提供了多个辅助脚本：
+
+```bash
+# 检查数据库状态
+python scripts/check_db.py
+
+# 查看交易动作统计
+python scripts/check_actions.py
+
+# 详细数据库检查
+python scripts/check_db_detailed.py
+
+# 测试Server酱通知
+python scripts/test_serverchan_length.py
+```
+
 ## 📊 分析结果说明
 
 系统会为每个交易对提供以下信息：
@@ -133,29 +200,57 @@ python main.py
 ## 📁 项目结构
 
 ```
-爬虫/
-├── main.py                 # 主程序入口
-├── config.py              # 配置文件
-├── okx_client.py          # OKX API客户端
-├── deepseek_analyzer.py   # DeepSeek分析器
-├── trading_analyzer.py    # 交易分析器
-├── scheduler.py           # 定时调度器
-├── requirements.txt       # 依赖包列表
-├── .env.example          # 环境变量模板
-├── .env                  # 环境变量文件（需要创建）
-├── README.md             # 使用说明
-├── trading_analysis.log  # 日志文件
-└── analysis_results/     # 分析结果目录
-    ├── analysis_20240101_120000.json
-    ├── analysis_20240101_120000.txt
-    └── ...
+data_fenxi/
+├── __init__.py                 # 项目根模块
+├── main.py                     # 主程序入口
+├── requirements.txt            # 依赖包列表
+├── .env.example               # 环境变量模板
+├── .env                       # 环境变量文件（需要创建）
+├── README.md                  # 使用说明
+├── SERVER_CHAN_GUIDE.md       # Server酱通知配置指南
+├── WEBSOCKET_GUIDE.md         # WebSocket监控使用指南
+├── .gitignore                 # Git忽略文件
+├── trading_analysis.log       # 日志文件
+├── analysis_results/          # 分析结果目录
+│   ├── analysis_20240101_120000.json
+│   ├── analysis_20240101_120000.txt
+│   └── ...
+├── core/                      # 核心模块
+│   ├── __init__.py
+│   ├── config.py              # 配置管理
+│   ├── database.py            # 数据库操作
+│   └── data_storage.py        # 数据存储管理
+├── trading/                   # 交易模块
+│   ├── __init__.py
+│   ├── okx_client.py          # OKX API客户端
+│   ├── trading_analyzer.py    # 交易分析器
+│   └── scheduler.py           # 任务调度器
+├── analysis/                  # 分析模块
+│   ├── __init__.py
+│   ├── deepseek_analyzer.py   # AI分析器
+│   ├── enhanced_indicators.py # 技术指标计算
+│   ├── prediction_model.py    # 预测模型
+│   └── win_rate_analyzer.py   # 胜率分析
+├── monitoring/                # 监控通知模块
+│   ├── __init__.py
+│   ├── websocket_monitor.py   # WebSocket监控
+│   └── serverchan_notifier.py # Server酱通知
+├── utils/                     # 工具模块
+│   ├── __init__.py
+│   └── ip_detector.py         # IP检测工具
+└── scripts/                   # 脚本模块
+    ├── __init__.py
+    ├── check_actions.py       # 检查动作脚本
+    ├── check_db.py           # 数据库检查
+    ├── check_db_detailed.py  # 详细数据库检查
+    └── test_serverchan_length.py # 通知测试
 ```
 
 ## ⚙️ 配置说明
 
 ### 交易对配置
 
-在 `config.py` 中可以修改要分析的交易对：
+在 `core/config.py` 中可以修改要分析的交易对：
 
 ```python
 TRADING_PAIRS = [
@@ -181,6 +276,38 @@ TIMEFRAME = '1h'         # 时间周期
 MAX_RISK_PERCENTAGE = 2.0      # 最大风险百分比
 STOP_LOSS_PERCENTAGE = 1.5     # 止损百分比
 TAKE_PROFIT_PERCENTAGE = 3.0   # 止盈百分比
+```
+
+### WebSocket监控配置
+
+```python
+WEBSOCKET_CONFIG = {
+    'enabled': True,
+    'symbols': ['BTC-USDT-SWAP', 'ETH-USDT-SWAP'],
+    'reconnect_interval': 30,
+    'max_reconnect_attempts': 5
+}
+```
+
+### 通知配置
+
+```python
+NOTIFICATION_CONFIG = {
+    'server_chan_enabled': True,
+    'notification_interval': 3600,  # 通知间隔（秒）
+    'risk_threshold': 3  # 风险等级阈值
+}
+```
+
+### 数据库配置
+
+```python
+DATABASE_CONFIG = {
+    'db_path': 'trading_data.db',
+    'backup_enabled': True,
+    'backup_interval': 86400,  # 备份间隔（秒）
+    'max_records': 10000  # 最大记录数
+}
 ```
 
 ## 📝 日志和结果

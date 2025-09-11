@@ -9,14 +9,17 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 import joblib
 import os
-from database import TradingDatabase
-from enhanced_indicators import EnhancedTechnicalIndicators
+from core.database import TradingDatabase
+from analysis.enhanced_indicators import EnhancedTechnicalIndicators
+from trading.okx_client import OKXClient
 
 class TradingPredictionModel:
     """交易预测模型"""
     
     def __init__(self, db_path: str = "trading_data.db", model_dir: str = "models"):
         self.db = TradingDatabase(db_path)
+        self.okx_client = OKXClient()
+        self.indicators_calculator = EnhancedTechnicalIndicators()
         self.model_dir = model_dir
         self.scaler = StandardScaler()
         self.label_encoder = LabelEncoder()
@@ -46,18 +49,13 @@ class TradingPredictionModel:
             self.train_models(X, y)
             self.save_models()
     
-    def prepare_training_data(self, days: int = 90) -> Tuple[pd.DataFrame, pd.Series]:
-        """准备训练数据"""
+    def prepare_training_data(self, days: int = 365) -> Tuple[pd.DataFrame, pd.Series]:
+        """准备训练数据 - 使用真实的OKX历史数据"""
         try:
-            logger.info(f"准备 {days} 天的训练数据")
+            logger.info(f"准备 {days} 天的真实历史训练数据")
             
-            # 获取历史分析结果和对应的价格数据
-            end_time = datetime.now()
-            start_time = end_time - timedelta(days=days)
-            
-            # 这里需要从数据库获取历史数据
-            # 暂时创建模拟数据用于演示
-            training_data = self._create_mock_training_data()
+            # 获取真实的历史数据
+            training_data = self._get_real_historical_data(days)
             
             if training_data.empty:
                 logger.warning("没有足够的训练数据")
@@ -77,77 +75,134 @@ class TradingPredictionModel:
             logger.error(f"准备训练数据失败: {e}")
             return pd.DataFrame(), pd.Series()
     
-    def _create_mock_training_data(self) -> pd.DataFrame:
-        """创建模拟训练数据（实际应用中应从数据库获取）"""
-        np.random.seed(42)
-        n_samples = 1000
-        
-        data = {
-            # 技术指标特征
-            'rsi_14': np.random.uniform(20, 80, n_samples),
-            'macd': np.random.uniform(-0.5, 0.5, n_samples),
-            'macd_signal': np.random.uniform(-0.5, 0.5, n_samples),
-            'bb_width': np.random.uniform(1, 10, n_samples),
-            'kdj_k': np.random.uniform(0, 100, n_samples),
-            'kdj_d': np.random.uniform(0, 100, n_samples),
-            'williams_r': np.random.uniform(-100, 0, n_samples),
-            'cci': np.random.uniform(-200, 200, n_samples),
-            'atr_percent': np.random.uniform(0.5, 5, n_samples),
-            'volume_ratio': np.random.uniform(0.5, 3, n_samples),
-            'volatility': np.random.uniform(0.1, 2, n_samples),
-            'adx': np.random.uniform(10, 50, n_samples),
+    def _get_real_historical_data(self, days: int = 365) -> pd.DataFrame:
+        """获取真实的OKX历史数据用于训练"""
+        try:
+            logger.info(f"开始获取 {days} 天的真实历史数据")
             
-            # 价格相关特征
-            'price_change_1h': np.random.uniform(-5, 5, n_samples),
-            'price_change_4h': np.random.uniform(-10, 10, n_samples),
-            'price_change_24h': np.random.uniform(-20, 20, n_samples),
+            # 主要交易对列表
+            symbols = ['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'BNB-USDT-SWAP', 'SOL-USDT-SWAP', 'ADA-USDT-SWAP']
+            all_training_data = []
             
-            # 市场特征
-            'market_cap_rank': np.random.randint(1, 100, n_samples),
-            'trading_volume_24h': np.random.uniform(1e6, 1e9, n_samples),
+            for symbol in symbols:
+                logger.info(f"获取 {symbol} 的历史数据")
+                
+                # 获取历史K线数据（1小时周期）
+                kline_data = self.okx_client.get_kline_data(symbol, '1h', limit=days * 24)
+                
+                if kline_data is None or kline_data.empty:
+                    logger.warning(f"无法获取 {symbol} 的K线数据")
+                    continue
+                
+                # 计算技术指标
+                indicators = self.indicators_calculator.calculate_all_indicators(kline_data)
+                
+                if not indicators:
+                    logger.warning(f"无法计算 {symbol} 的技术指标")
+                    continue
+                
+                # 准备训练样本
+                symbol_data = self._prepare_symbol_training_data(symbol, kline_data, indicators)
+                
+                if not symbol_data.empty:
+                    all_training_data.append(symbol_data)
+                    logger.info(f"成功处理 {symbol}，获得 {len(symbol_data)} 条训练样本")
             
-            # 信心度和风险等级
-            'confidence': np.random.uniform(0.3, 0.95, n_samples),
-            'risk_level': np.random.choice(['low', 'medium', 'high'], n_samples),
+            if not all_training_data:
+                logger.error("未能获取任何有效的历史数据")
+                return pd.DataFrame()
             
-            # 时间特征
-            'hour_of_day': np.random.randint(0, 24, n_samples),
-            'day_of_week': np.random.randint(0, 7, n_samples),
-        }
-        
-        df = pd.DataFrame(data)
-        
-        # 创建目标变量（基于一些规则）
-        outcomes = []
-        for _, row in df.iterrows():
-            # 简单的规则：RSI超卖且MACD金叉且高信心度 -> 更可能成功
-            score = 0
+            # 合并所有数据
+            combined_data = pd.concat(all_training_data, ignore_index=True)
+            logger.info(f"总共获得 {len(combined_data)} 条训练样本")
             
-            if row['rsi_14'] < 30:  # RSI超卖
-                score += 1
-            if row['rsi_14'] > 70:  # RSI超买（做空信号）
-                score += 1
-            if row['macd'] > row['macd_signal']:  # MACD金叉
-                score += 1
-            if row['confidence'] > 0.7:  # 高信心度
-                score += 2
-            if row['volatility'] < 1:  # 低波动率
-                score += 1
-            if row['volume_ratio'] > 1.5:  # 高成交量
-                score += 1
+            return combined_data
             
-            # 添加随机性
-            score += np.random.normal(0, 1)
+        except Exception as e:
+            logger.error(f"获取真实历史数据失败: {e}")
+            return pd.DataFrame()
+    
+    def _prepare_symbol_training_data(self, symbol: str, kline_data: pd.DataFrame, indicators: Dict) -> pd.DataFrame:
+        """为单个交易对准备训练数据"""
+        try:
+            training_samples = []
             
-            # 转换为二分类结果
-            outcome = 'win' if score > 3 else 'loss'
-            outcomes.append(outcome)
-        
-        df['outcome'] = outcomes
-        df['symbol'] = np.random.choice(['BTC-USDT-SWAP', 'ETH-USDT-SWAP', 'BNB-USDT-SWAP'], n_samples)
-        df['timestamp'] = pd.date_range(start='2024-01-01', periods=n_samples, freq='1H')
-        
-        return df
+            # 确保有足够的数据点
+            if len(kline_data) < 100:
+                return pd.DataFrame()
+            
+            # 遍历历史数据，创建训练样本
+            for i in range(50, len(kline_data) - 24):  # 留出前50个点用于指标计算，后24个点用于验证结果
+                current_time = kline_data.index[i]  # timestamp是索引
+                current_price = kline_data.iloc[i]['close']
+                
+                # 获取未来24小时的价格变化（用作标签）
+                future_price = kline_data.iloc[i + 24]['close']
+                price_change_24h = (future_price - current_price) / current_price * 100
+                
+                # 创建特征向量（使用扁平化的指标键名）
+                features = {
+                    'symbol': symbol,
+                    'timestamp': current_time,
+                    
+                    # 技术指标特征（使用扁平化键名）
+                    'rsi_14': indicators.get('rsi_14', 50),
+                    'macd': indicators.get('macd', 0),
+                    'macd_signal': indicators.get('macd_signal', 0),
+                    'macd_histogram': indicators.get('macd_histogram', 0),
+                    'bb_upper': indicators.get('bb_upper', current_price),
+                    'bb_middle': indicators.get('bb_middle', current_price),
+                    'bb_lower': indicators.get('bb_lower', current_price),
+                    'bb_width': indicators.get('bb_width', 0),
+                    'kdj_k': indicators.get('kdj_k', 50),
+                    'kdj_d': indicators.get('kdj_d', 50),
+                    'kdj_j': indicators.get('kdj_j', 50),
+                    'williams_r': indicators.get('williams_r', -50),
+                    'cci': indicators.get('cci', 0),
+                    'atr': indicators.get('atr', 0),
+                    'atr_percent': indicators.get('atr_percent', 1),
+                    
+                    # 价格相关特征
+                    'price_change_1h': (kline_data.iloc[i]['close'] - kline_data.iloc[i-1]['close']) / kline_data.iloc[i-1]['close'] * 100 if i > 0 else 0,
+                    'price_change_4h': (kline_data.iloc[i]['close'] - kline_data.iloc[i-4]['close']) / kline_data.iloc[i-4]['close'] * 100 if i >= 4 else 0,
+                    'price_change_24h_past': (kline_data.iloc[i]['close'] - kline_data.iloc[i-24]['close']) / kline_data.iloc[i-24]['close'] * 100 if i >= 24 else 0,
+                    
+                    # 成交量特征
+                    'volume': kline_data.iloc[i]['volume'],
+                    'volume_ratio': kline_data.iloc[i]['volume'] / kline_data.iloc[i-24:i]['volume'].mean() if i >= 24 else 1,
+                    
+                    # 波动率特征
+                    'volatility': indicators.get('volatility', 1),
+                    'volatility_percentile': indicators.get('volatility_percentile', 50),
+                    
+                    # 趋势特征
+                    'adx': indicators.get('adx', 25),
+                    'trend_strength': indicators.get('trend_strength', 0),
+                    
+                    # 时间特征
+                    'hour_of_day': pd.to_datetime(current_time).hour,
+                    'day_of_week': pd.to_datetime(current_time).weekday(),
+                    'day_of_month': pd.to_datetime(current_time).day,
+                }
+                
+                # 创建标签（基于未来24小时价格变化）
+                if price_change_24h > 2:  # 上涨超过2%
+                    outcome = 'win'
+                elif price_change_24h < -2:  # 下跌超过2%
+                    outcome = 'loss'
+                else:  # 横盘
+                    outcome = 'neutral'
+                
+                features['outcome'] = outcome
+                features['future_return'] = price_change_24h
+                
+                training_samples.append(features)
+            
+            return pd.DataFrame(training_samples)
+            
+        except Exception as e:
+            logger.error(f"准备 {symbol} 训练数据失败: {e}")
+            return pd.DataFrame()
     
     def train_models(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, float]:
         """训练预测模型"""
@@ -379,7 +434,7 @@ class TradingPredictionModel:
             logger.error(f"加载模型失败: {e}")
             return False
     
-    def retrain_model(self, days: int = 90) -> Dict[str, float]:
+    def retrain_model(self, days: int = 365) -> Dict[str, float]:
         """重新训练模型"""
         try:
             logger.info("开始重新训练模型")

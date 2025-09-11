@@ -10,10 +10,10 @@ from collections import deque
 import threading
 import time
 
-from config import Config
-from serverchan_notifier import ServerChanNotifier
-from database import TradingDatabase
-from okx_client import OKXClient
+from core.config import Config
+from monitoring.serverchan_notifier import ServerChanNotifier
+from core.database import TradingDatabase
+from trading.okx_client import OKXClient
 
 @dataclass
 class PriceAlert:

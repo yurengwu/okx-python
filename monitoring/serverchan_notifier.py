@@ -7,24 +7,27 @@ Server酱微信通知模块
 
 import requests
 import json
-from typing import Dict, Optional
+from typing import Dict, Optional, List, Union
 from loguru import logger
 from datetime import datetime
 
 class ServerChanNotifier:
-    def __init__(self, sendkey: str):
+    def __init__(self, sendkey: Union[str, List[str]]):
         """
         初始化Server酱通知器
         
         Args:
-            sendkey: Server酱的SendKey
+            sendkey: Server酱的SendKey，支持单个token字符串或多个token列表
         """
-        self.sendkey = sendkey
+        if isinstance(sendkey, str):
+            self.sendkeys = [sendkey]
+        else:
+            self.sendkeys = sendkey
         self.base_url = "https://sctapi.ftqq.com"
         
     def send_notification(self, title: str, content: str, short: Optional[str] = None) -> Dict:
         """
-        发送通知到微信
+        发送通知到微信（支持多token群发）
         
         Args:
             title: 通知标题
@@ -34,11 +37,9 @@ class ServerChanNotifier:
         Returns:
             Dict: 发送结果
         """
-        if not self.sendkey:
+        if not self.sendkeys:
             logger.error("Server酱SendKey未配置")
             return {"success": False, "error": "SendKey未配置"}
-            
-        url = f"{self.base_url}/{self.sendkey}.send"
         
         data = {
             "title": title,
@@ -47,32 +48,43 @@ class ServerChanNotifier:
         
         if short:
             data["short"] = short
-            
-        # 添加调试信息
-        logger.info(f"准备发送Server酱通知: 标题长度={len(title)}, 内容长度={len(content)}")
         
-        # 检查内容中的交易对数量
-        pair_count = content.count('## 📊 【')
-        logger.info(f"通知内容包含 {pair_count} 个交易对")
+        # 群发到所有token
+        results = []
+        success_count = 0
+        
+        for i, sendkey in enumerate(self.sendkeys):
+            url = f"{self.base_url}/{sendkey}.send"
             
-        try:
-            response = requests.post(url, data=data, timeout=10)
-            result = response.json()
-            
-            # 记录完整的响应信息
-            logger.info(f"Server酱响应: {result}")
-            
-            if result.get("code") == 0:
-                logger.info(f"Server酱通知发送成功: {title}")
-                return {"success": True, "message": "通知发送成功", "response": result}
-            else:
-                error_msg = result.get("message", "未知错误")
-                logger.error(f"Server酱通知发送失败: {error_msg}")
-                return {"success": False, "error": error_msg, "response": result}
+            try:
+                logger.info(f"发送通知到token {i+1}/{len(self.sendkeys)}: {sendkey[:10]}...")
+                response = requests.post(url, data=data, timeout=10)
+                result = response.json()
                 
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Server酱通知发送异常: {e}")
-            return {"success": False, "error": str(e)}
+                if result.get("code") == 0:
+                    logger.info(f"Token {i+1} 发送成功")
+                    success_count += 1
+                    results.append({"token_index": i+1, "success": True, "response": result})
+                else:
+                    error_msg = result.get("message", "未知错误")
+                    logger.error(f"Token {i+1} 发送失败: {error_msg}")
+                    results.append({"token_index": i+1, "success": False, "error": error_msg, "response": result})
+                    
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Token {i+1} 发送异常: {e}")
+                results.append({"token_index": i+1, "success": False, "error": str(e)})
+        
+        # 返回群发结果
+        overall_success = success_count > 0
+        logger.info(f"群发完成: {success_count}/{len(self.sendkeys)} 个token发送成功")
+        
+        return {
+            "success": overall_success,
+            "total_tokens": len(self.sendkeys),
+            "success_count": success_count,
+            "results": results,
+            "message": f"群发完成，{success_count}/{len(self.sendkeys)} 个token发送成功"
+        }
             
     def format_trading_analysis(self, analysis_result: Dict) -> tuple:
         """

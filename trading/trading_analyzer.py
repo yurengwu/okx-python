@@ -5,27 +5,33 @@ from datetime import datetime
 import json
 import os
 
-from okx_client import OKXClient
-from deepseek_analyzer import DeepSeekAnalyzer
-from data_storage import DataStorageManager
-from win_rate_analyzer import WinRateAnalyzer
-from serverchan_notifier import ServerChanNotifier
-from config import Config
+from trading.okx_client import OKXClient
+from analysis.deepseek_analyzer import DeepSeekAnalyzer
+# from core.data_storage import DataStorageManager  # 移除以避免循环导入
+from analysis.win_rate_analyzer import WinRateAnalyzer
+from monitoring.serverchan_notifier import ServerChanNotifier
+from core.config import Config
 
 class TradingAnalyzer:
     def __init__(self):
         """初始化交易分析器"""
         self.okx_client = OKXClient()
         self.deepseek_analyzer = DeepSeekAnalyzer()
+        # 延迟导入避免循环依赖
+        from core.data_storage import DataStorageManager
         self.data_storage = DataStorageManager()
         self.win_rate_analyzer = WinRateAnalyzer()
         self.results_dir = "analysis_results"
         
         # 初始化Server酱通知器
         self.serverchan_notifier = None
-        if Config.ENABLE_SERVERCHAN_NOTIFICATION and Config.SERVERCHAN_SENDKEY:
-            self.serverchan_notifier = ServerChanNotifier(Config.SERVERCHAN_SENDKEY)
-            logger.info("Server酱通知功能已启用")
+        if Config.ENABLE_SERVERCHAN_NOTIFICATION:
+            tokens = Config.get_serverchan_tokens()
+            if tokens:
+                self.serverchan_notifier = ServerChanNotifier(tokens)
+                logger.info(f"Server酱通知功能已启用，配置了 {len(tokens)} 个token")
+            else:
+                logger.warning("Server酱通知功能已启用但未配置token")
         
         # 创建结果目录
         if not os.path.exists(self.results_dir):
@@ -34,9 +40,11 @@ class TradingAnalyzer:
     def run_analysis(self, symbols: Optional[List[str]] = None) -> Dict:
         """运行完整的交易分析"""
         try:
-            # 使用配置中的交易对或传入的交易对
+            # 使用动态获取的交易对或传入的交易对
             if symbols is None:
-                symbols = Config.TRADING_PAIRS
+                logger.info("正在动态获取活跃交易对...")
+                symbols = Config.get_trading_pairs(self.okx_client)
+                logger.info(f"动态获取到 {len(symbols)} 个交易对: {symbols[:5]}{'...' if len(symbols) > 5 else ''}")
             
             logger.info(f"开始分析 {len(symbols)} 个交易对")
             

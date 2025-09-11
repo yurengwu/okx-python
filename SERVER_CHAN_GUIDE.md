@@ -16,8 +16,16 @@ Server酱通知功能可以将OKX交易分析结果实时推送到您的微信�
 ```
 # Server酱通知配置
 SERVERCHAN_SENDKEY=your_sendkey_here
+# 多个token群发配置（逗号分隔，可选）
+SERVERCHAN_SENDKEYS=token2,token3,token4
 ENABLE_SERVERCHAN_NOTIFICATION=true
 ```
+
+**多token群发说明：**
+- `SERVERCHAN_SENDKEY`：主要token，必填
+- `SERVERCHAN_SENDKEYS`：额外的token列表，用逗号分隔，可选
+- 系统会自动向所有配置的token发送通知，实现群发功能
+- 只要有一个token发送成功，就认为通知发送成功
 
 ## 🚀 使用方法
 

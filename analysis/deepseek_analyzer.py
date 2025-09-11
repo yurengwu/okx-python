@@ -2,12 +2,11 @@ import json
 from typing import Dict, List, Optional
 from openai import OpenAI
 from loguru import logger
-from config import Config
+from core.config import Config
 import pandas as pd
-from enhanced_indicators import EnhancedTechnicalIndicators
-from data_storage import DataStorageManager
-from win_rate_analyzer import WinRateAnalyzer
-from prediction_model import TradingPredictionModel
+from analysis.enhanced_indicators import EnhancedTechnicalIndicators
+from analysis.win_rate_analyzer import WinRateAnalyzer
+# from analysis.prediction_model import TradingPredictionModel  # 移除以避免循环导入
 
 class DeepSeekAnalyzer:
     def __init__(self):
@@ -17,8 +16,12 @@ class DeepSeekAnalyzer:
             base_url=Config.DEEPSEEK_BASE_URL
         )
         self.indicators_calculator = EnhancedTechnicalIndicators()
+        # 延迟导入避免循环依赖
+        from core.data_storage import DataStorageManager
         self.data_storage = DataStorageManager()
         self.win_rate_analyzer = WinRateAnalyzer()
+        # 延迟导入TradingPredictionModel避免循环依赖
+        from analysis.prediction_model import TradingPredictionModel
         self.prediction_model = TradingPredictionModel()
     
     def prepare_market_data_for_analysis(self, market_data: Dict) -> str:

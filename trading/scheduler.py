@@ -7,8 +7,8 @@ import threading
 import signal
 import sys
 
-from trading_analyzer import TradingAnalyzer
-from config import Config
+from trading.trading_analyzer import TradingAnalyzer
+from core.config import Config
 
 class TradingScheduler:
     def __init__(self):
@@ -60,19 +60,23 @@ class TradingScheduler:
         except Exception as e:
             logger.error(f"定时分析任务执行失败: {e}")
     
-    def start(self, interval_hours: int = 1):
+    def start(self, interval_hours: int = None, interval_minutes: int = None):
         """启动定时调度器"""
         if self.is_running:
             logger.warning("调度器已在运行中")
             return
         
-        logger.info(f"启动交易分析调度器，间隔: {interval_hours} 小时")
-        
         # 清除之前的任务
         schedule.clear()
         
         # 设置定时任务
-        schedule.every(interval_hours).hours.do(self.run_scheduled_analysis)
+        if interval_minutes and interval_minutes < 60:
+            logger.info(f"启动交易分析调度器，间隔: {interval_minutes} 分钟")
+            schedule.every(interval_minutes).minutes.do(self.run_scheduled_analysis)
+        else:
+            hours = interval_hours or 1
+            logger.info(f"启动交易分析调度器，间隔: {hours} 小时")
+            schedule.every(hours).hours.do(self.run_scheduled_analysis)
         
         # 立即执行一次
         logger.info("立即执行首次分析")
@@ -150,7 +154,13 @@ def main():
     
     try:
         # 启动调度器
-        scheduler.start(interval_hours=1)
+        from core.config import Config
+        interval_minutes = Config.ANALYSIS_INTERVAL // 60
+        if interval_minutes < 60:
+            scheduler.start(interval_minutes=interval_minutes)
+        else:
+            interval_hours = Config.ANALYSIS_INTERVAL // 3600
+            scheduler.start(interval_hours=interval_hours)
         
         # 保持主线程运行
         logger.info("调度器正在运行，按 Ctrl+C 停止")

@@ -5,8 +5,11 @@
 """
 
 import json
-from serverchan_notifier import ServerChanNotifier
-from config import Config
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from monitoring.serverchan_notifier import ServerChanNotifier
+from core.config import Config
 
 def test_message_length():
     """测试Server酱消息长度"""

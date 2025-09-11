@@ -2,7 +2,7 @@ import ccxt
 import pandas as pd
 from typing import List, Dict, Optional
 from loguru import logger
-from config import Config
+from core.config import Config
 import time
 
 class OKXClient:

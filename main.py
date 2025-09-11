@@ -11,11 +11,11 @@ import time
 from datetime import datetime
 from loguru import logger
 
-from config import Config
-from trading_analyzer import TradingAnalyzer
-from scheduler import TradingScheduler
-from ip_detector import IPDetector
-from websocket_monitor import WebSocketMonitor
+from core.config import Config
+from trading.trading_analyzer import TradingAnalyzer
+from trading.scheduler import TradingScheduler
+from utils.ip_detector import IPDetector
+from monitoring.websocket_monitor import WebSocketMonitor
 
 def setup_logging():
     """设置日志配置"""
@@ -200,8 +200,14 @@ def run_scheduler():
     scheduler = TradingScheduler()
     
     try:
-        print("\n🚀 启动每小时自动分析...")
-        scheduler.start(interval_hours=1)
+        interval_minutes = Config.ANALYSIS_INTERVAL // 60
+        if interval_minutes < 60:
+            print(f"\n🚀 启动每{interval_minutes}分钟自动分析...")
+            scheduler.start(interval_minutes=interval_minutes)
+        else:
+            interval_hours = Config.ANALYSIS_INTERVAL // 3600
+            print(f"\n🚀 启动每{interval_hours}小时自动分析...")
+            scheduler.start(interval_hours=interval_hours)
         
         print("\n📊 调度器状态:")
         status = scheduler.get_status()
@@ -282,12 +288,16 @@ def test_serverchan_notification():
         print("   请在.env文件中设置 ENABLE_SERVERCHAN_NOTIFICATION=true")
         return
     
-    if not Config.SERVERCHAN_SENDKEY:
+    tokens = Config.get_serverchan_tokens()
+    if not tokens:
         print("❌ Server酱SendKey未配置")
         print("   请在.env文件中设置 SERVERCHAN_SENDKEY=你的SendKey")
+        print("   或设置 SERVERCHAN_SENDKEYS=token1,token2,token3 进行群发")
         return
     
-    print(f"📱 使用SendKey: {Config.SERVERCHAN_SENDKEY[:8]}...")
+    print(f"📱 配置了 {len(tokens)} 个SendKey")
+    for i, token in enumerate(tokens):
+        print(f"   Token {i+1}: {token[:8]}...")
     print("\n正在发送测试通知...")
     
     result = analyzer.test_serverchan_notification()
@@ -371,7 +381,14 @@ def run_websocket_monitor():
             return
             
         print("\n🔄 启动WebSocket实时监控系统...")
-        print(f"监控交易对: {', '.join(Config.TRADING_PAIRS)}")
+        
+        # 动态获取交易对
+        from trading.okx_client import OKXClient
+        okx_client = OKXClient()
+        trading_pairs = Config.get_trading_pairs(okx_client)
+        
+        print(f"监控交易对: {', '.join(trading_pairs[:5])}{'...' if len(trading_pairs) > 5 else ''}")
+        print(f"总计: {len(trading_pairs)} 个交易对")
         print(f"波动率阈值: {Config.VOLATILITY_THRESHOLD}")
         print(f"成交量异常倍数: {Config.VOLUME_SPIKE_MULTIPLIER}")
         print("\n按 Ctrl+C 停止监控\n")
