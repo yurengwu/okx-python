@@ -15,6 +15,12 @@ class Config:
     DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY', '')
     DEEPSEEK_BASE_URL = os.getenv('DEEPSEEK_BASE_URL', 'https://api.deepseek.com')
     
+    # 代理配置
+    USE_PROXY = os.getenv('USE_PROXY', 'False').lower() == 'true'
+    PROXY_HOST = os.getenv('PROXY_HOST', '127.0.0.1')
+    PROXY_PORT = int(os.getenv('PROXY_PORT', '7890'))
+    PROXY_TYPE = os.getenv('PROXY_TYPE', 'http')
+    
     # 交易对配置 (OKX永续合约格式)
     # 默认交易对列表（作为备用）
     DEFAULT_TRADING_PAIRS = [
