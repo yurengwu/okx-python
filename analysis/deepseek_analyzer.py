@@ -158,6 +158,49 @@ class DeepSeekAnalyzer:
     def analyze_market_data(self, market_data: Dict) -> Optional[Dict]:
         """使用DeepSeek分析市场数据"""
         try:
+            # 如果交易对数量较多，分批处理
+            symbols = list(market_data.keys())
+            batch_size = 5  # 每批处理5个交易对
+            
+            if len(symbols) <= batch_size:
+                # 单批处理
+                return self._analyze_batch(market_data)
+            else:
+                # 分批处理
+                logger.info(f"交易对数量较多({len(symbols)}个)，将分批处理，每批{batch_size}个")
+                all_recommendations = {}
+                market_overview_parts = []
+                
+                for i in range(0, len(symbols), batch_size):
+                    batch_symbols = symbols[i:i+batch_size]
+                    batch_data = {symbol: market_data[symbol] for symbol in batch_symbols}
+                    
+                    logger.info(f"正在分析第{i//batch_size + 1}批交易对: {batch_symbols}")
+                    batch_result = self._analyze_batch(batch_data)
+                    
+                    if batch_result and 'recommendations' in batch_result:
+                        all_recommendations.update(batch_result['recommendations'])
+                        if batch_result.get('market_overview'):
+                            market_overview_parts.append(batch_result['market_overview'])
+                    
+                    # 添加延迟避免API限制
+                    import time
+                    time.sleep(2)
+                
+                # 合并结果
+                return {
+                    "analysis_time": pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    "market_overview": " ".join(market_overview_parts) if market_overview_parts else "批量分析完成",
+                    "recommendations": all_recommendations
+                }
+                
+        except Exception as e:
+            logger.error(f"DeepSeek分析失败: {e}")
+            return None
+    
+    def _analyze_batch(self, market_data: Dict) -> Optional[Dict]:
+        """分析单批市场数据"""
+        try:
             # 准备数据
             data_str = self.prepare_market_data_for_analysis(market_data)
             
@@ -226,7 +269,7 @@ class DeepSeekAnalyzer:
   }}
 }}
 """
-            
+
             # 调用DeepSeek API
             response = self.client.chat.completions.create(
                 model="deepseek-chat",
@@ -235,7 +278,7 @@ class DeepSeekAnalyzer:
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.3,
-                max_tokens=8000
+                max_tokens=8000  # DeepSeek API最大支持8192
             )
             
             # 解析响应
@@ -251,7 +294,7 @@ class DeepSeekAnalyzer:
                     json_str = analysis_text[json_start:json_end]
                     analysis_result = json.loads(json_str)
                     
-                    logger.info("DeepSeek分析完成")
+                    logger.info(f"DeepSeek分析完成，返回{len(analysis_result.get('recommendations', {}))}个交易对的分析")
                     return analysis_result
                 else:
                     logger.warning("无法从响应中提取JSON格式")
@@ -272,8 +315,9 @@ class DeepSeekAnalyzer:
                 }
                 
         except Exception as e:
-            logger.error(f"DeepSeek分析失败: {e}")
+            logger.error(f"DeepSeek批量分析失败: {e}")
             return None
+
     
     def format_analysis_output(self, analysis: Dict) -> str:
         """格式化增强分析输出"""

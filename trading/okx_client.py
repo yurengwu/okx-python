@@ -107,6 +107,9 @@ class OKXClient:
     def get_market_data(self, symbols: List[str]) -> Dict:
         """获取多个交易对的市场数据"""
         market_data = {}
+        failed_symbols = []
+        
+        logger.info(f"开始获取 {len(symbols)} 个交易对的市场数据")
         
         for symbol in symbols:
             try:
@@ -125,10 +128,19 @@ class OKXClient:
                         'ticker': ticker_data,
                         'funding': funding_data
                     }
+                    logger.info(f"成功获取 {symbol} 的市场数据")
+                else:
+                    failed_symbols.append(symbol)
+                    logger.warning(f"跳过 {symbol}：K线数据获取失败")
                     
             except Exception as e:
+                failed_symbols.append(symbol)
                 logger.error(f"获取 {symbol} 市场数据失败: {e}")
                 continue
+        
+        logger.info(f"市场数据获取完成：成功 {len(market_data)} 个，失败 {len(failed_symbols)} 个")
+        if failed_symbols:
+            logger.warning(f"获取失败的交易对: {failed_symbols}")
         
         return market_data
     
