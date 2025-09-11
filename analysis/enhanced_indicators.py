@@ -85,33 +85,68 @@ class EnhancedTechnicalIndicators:
     
     @staticmethod
     def calculate_rsi(close: np.ndarray) -> Dict:
-        """计算RSI指标"""
+        """计算RSI指标 - 优化版本"""
         try:
+            # 数据验证
+            if len(close) < 14:
+                logger.warning(f"RSI计算需要至少14个数据点，当前只有{len(close)}个")
+                return {'rsi_14': 50.0, 'rsi_21': 50.0}  # 返回中性值
+            
+            # 检查数据有效性
+            if np.any(np.isnan(close)) or np.any(np.isinf(close)):
+                logger.warning("RSI计算数据包含无效值")
+                close = np.nan_to_num(close, nan=np.nanmean(close), posinf=np.nanmax(close[np.isfinite(close)]), neginf=np.nanmin(close[np.isfinite(close)]))
+            
+            rsi_14 = talib.RSI(close, timeperiod=14)[-1]
+            rsi_21 = talib.RSI(close, timeperiod=21)[-1] if len(close) >= 21 else rsi_14
+            
+            # 边界值处理
+            rsi_14 = np.clip(rsi_14, 0.0, 100.0) if not np.isnan(rsi_14) else 50.0
+            rsi_21 = np.clip(rsi_21, 0.0, 100.0) if not np.isnan(rsi_21) else 50.0
+            
             return {
-                'rsi_14': talib.RSI(close, timeperiod=14)[-1] if len(close) >= 14 else None,
-                'rsi_21': talib.RSI(close, timeperiod=21)[-1] if len(close) >= 21 else None,
+                'rsi_14': float(rsi_14),
+                'rsi_21': float(rsi_21),
             }
         except Exception as e:
             logger.error(f"计算RSI失败: {e}")
-            return {}
+            return {'rsi_14': 50.0, 'rsi_21': 50.0}
     
     @staticmethod
     def calculate_macd(close: np.ndarray) -> Dict:
-        """计算MACD指标"""
+        """计算MACD指标 - 优化版本"""
         try:
+            # 数据验证
             if len(close) < 26:
-                return {'macd': None, 'macd_signal': None, 'macd_histogram': None}
+                logger.warning(f"MACD计算需要至少26个数据点，当前只有{len(close)}个")
+                return {'macd': 0.0, 'macd_signal': 0.0, 'macd_histogram': 0.0}
+            
+            # 检查数据有效性
+            if np.any(np.isnan(close)) or np.any(np.isinf(close)):
+                logger.warning("MACD计算数据包含无效值")
+                close = np.nan_to_num(close, nan=np.nanmean(close), posinf=np.nanmax(close[np.isfinite(close)]), neginf=np.nanmin(close[np.isfinite(close)]))
             
             macd, macd_signal, macd_hist = talib.MACD(close, fastperiod=12, slowperiod=26, signalperiod=9)
             
+            # 处理计算结果
+            macd_val = macd[-1] if len(macd) > 0 and not np.isnan(macd[-1]) else 0.0
+            signal_val = macd_signal[-1] if len(macd_signal) > 0 and not np.isnan(macd_signal[-1]) else 0.0
+            hist_val = macd_hist[-1] if len(macd_hist) > 0 and not np.isnan(macd_hist[-1]) else 0.0
+            
+            # 数值范围检查（防止异常大的值）
+            max_val = np.abs(np.nanmean(close)) * 0.5  # 设置合理的上限
+            macd_val = np.clip(macd_val, -max_val, max_val)
+            signal_val = np.clip(signal_val, -max_val, max_val)
+            hist_val = np.clip(hist_val, -max_val, max_val)
+            
             return {
-                'macd': macd[-1] if not np.isnan(macd[-1]) else None,
-                'macd_signal': macd_signal[-1] if not np.isnan(macd_signal[-1]) else None,
-                'macd_histogram': macd_hist[-1] if not np.isnan(macd_hist[-1]) else None,
+                'macd': float(macd_val),
+                'macd_signal': float(signal_val),
+                'macd_histogram': float(hist_val),
             }
         except Exception as e:
             logger.error(f"计算MACD失败: {e}")
-            return {'macd': None, 'macd_signal': None, 'macd_histogram': None}
+            return {'macd': 0.0, 'macd_signal': 0.0, 'macd_histogram': 0.0}
     
     @staticmethod
     def calculate_bollinger_bands(close: np.ndarray, period: int = 20, std_dev: int = 2) -> Dict:
@@ -143,38 +178,58 @@ class EnhancedTechnicalIndicators:
     
     @staticmethod
     def calculate_kdj(high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int = 9) -> Dict:
-        """计算KDJ指标"""
+        """计算KDJ指标 - 优化版本"""
         try:
+            # 数据验证
             if len(close) < period:
-                return {'kdj_k': None, 'kdj_d': None, 'kdj_j': None}
+                logger.warning(f"KDJ计算需要至少{period}个数据点，当前只有{len(close)}个")
+                return {'kdj_k': 50.0, 'kdj_d': 50.0, 'kdj_j': 50.0}
+            
+            # 检查数据有效性
+            for arr, name in [(high, 'high'), (low, 'low'), (close, 'close')]:
+                if np.any(np.isnan(arr)) or np.any(np.isinf(arr)):
+                    logger.warning(f"KDJ计算{name}数据包含无效值")
+                    arr = np.nan_to_num(arr, nan=np.nanmean(arr), posinf=np.nanmax(arr[np.isfinite(arr)]), neginf=np.nanmin(arr[np.isfinite(arr)]))
             
             # 计算K值
             lowest_low = talib.MIN(low, timeperiod=period)
             highest_high = talib.MAX(high, timeperiod=period)
             
-            rsv = (close - lowest_low) / (highest_high - lowest_low) * 100
+            # 防止除零错误
+            denominator = highest_high - lowest_low
+            denominator = np.where(denominator == 0, 1e-8, denominator)  # 避免除零
+            
+            rsv = (close - lowest_low) / denominator * 100
+            rsv = np.clip(rsv, 0, 100)  # 限制RSV在0-100之间
             
             # 使用简单移动平均计算K和D
             k_values = []
             d_values = []
             
-            k = 50  # 初始K值
-            d = 50  # 初始D值
+            k = 50.0  # 初始K值
+            d = 50.0  # 初始D值
             
             for i in range(len(rsv)):
-                if not np.isnan(rsv[i]):
+                if not np.isnan(rsv[i]) and np.isfinite(rsv[i]):
                     k = (2/3) * k + (1/3) * rsv[i]
                     d = (2/3) * d + (1/3) * k
+                # 边界值处理
+                k = np.clip(k, 0.0, 100.0)
+                d = np.clip(d, 0.0, 100.0)
                 k_values.append(k)
                 d_values.append(d)
             
             # J = 3K - 2D
-            j = 3 * k_values[-1] - 2 * d_values[-1] if k_values and d_values else None
+            if k_values and d_values:
+                j = 3 * k_values[-1] - 2 * d_values[-1]
+                j = np.clip(j, -100.0, 200.0)  # J值可以超出0-100范围，但需要合理限制
+            else:
+                j = 50.0
             
             return {
-                'kdj_k': k_values[-1] if k_values else None,
-                'kdj_d': d_values[-1] if d_values else None,
-                'kdj_j': j,
+                'kdj_k': float(k_values[-1]) if k_values else 50.0,
+                'kdj_d': float(d_values[-1]) if d_values else 50.0,
+                'kdj_j': float(j),
             }
         except Exception as e:
             logger.error(f"计算KDJ失败: {e}")
@@ -214,22 +269,35 @@ class EnhancedTechnicalIndicators:
     
     @staticmethod
     def calculate_atr(high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int = 14) -> Dict:
-        """计算ATR指标"""
+        """计算ATR指标 - 优化版本"""
         try:
+            # 数据验证
             if len(close) < period:
-                return {'atr': None, 'atr_percent': None}
+                logger.warning(f"ATR计算需要至少{period}个数据点，当前只有{len(close)}个")
+                return {'atr': 0.0, 'atr_percent': 0.0}
+            
+            # 检查数据有效性
+            for arr, name in [(high, 'high'), (low, 'low'), (close, 'close')]:
+                if np.any(np.isnan(arr)) or np.any(np.isinf(arr)):
+                    logger.warning(f"ATR计算{name}数据包含无效值")
+                    arr = np.nan_to_num(arr, nan=np.nanmean(arr), posinf=np.nanmax(arr[np.isfinite(arr)]), neginf=np.nanmin(arr[np.isfinite(arr)]))
             
             atr = talib.ATR(high, low, close, timeperiod=period)
-            atr_value = atr[-1] if not np.isnan(atr[-1]) else None
+            atr_value = atr[-1] if len(atr) > 0 and not np.isnan(atr[-1]) else 0.0
+            
+            # 确保ATR值为正数
+            atr_value = max(0.0, atr_value)
             
             # ATR百分比
-            atr_percent = None
-            if atr_value and close[-1] > 0:
+            atr_percent = 0.0
+            if atr_value > 0 and close[-1] > 0 and np.isfinite(close[-1]):
                 atr_percent = (atr_value / close[-1]) * 100
+                # 限制ATR百分比在合理范围内
+                atr_percent = np.clip(atr_percent, 0.0, 50.0)  # 最大50%
             
             return {
-                'atr': atr_value,
-                'atr_percent': atr_percent,
+                'atr': float(atr_value),
+                'atr_percent': float(atr_percent),
             }
         except Exception as e:
             logger.error(f"计算ATR失败: {e}")
