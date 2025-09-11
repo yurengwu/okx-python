@@ -7,9 +7,11 @@ Server酱微信通知模块
 
 import requests
 import json
+import time
 from typing import Dict, Optional, List, Union
 from loguru import logger
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 
 class ServerChanNotifier:
     def __init__(self, sendkey: Union[str, List[str]]):
@@ -49,30 +51,104 @@ class ServerChanNotifier:
         if short:
             data["short"] = short
         
-        # 群发到所有token
+        # 并发群发到所有token
         results = []
         success_count = 0
         
-        for i, sendkey in enumerate(self.sendkeys):
+        def send_to_single_token(sendkey_info):
+            """发送通知到单个token（带重试机制）"""
+            i, sendkey = sendkey_info
             url = f"{self.base_url}/{sendkey}.send"
+            max_retries = 3
+            retry_delay = 1  # 秒
             
-            try:
-                logger.info(f"发送通知到token {i+1}/{len(self.sendkeys)}: {sendkey[:10]}...")
-                response = requests.post(url, data=data, timeout=10)
-                result = response.json()
-                
-                if result.get("code") == 0:
-                    logger.info(f"Token {i+1} 发送成功")
-                    success_count += 1
-                    results.append({"token_index": i+1, "success": True, "response": result})
-                else:
-                    error_msg = result.get("message", "未知错误")
-                    logger.error(f"Token {i+1} 发送失败: {error_msg}")
-                    results.append({"token_index": i+1, "success": False, "error": error_msg, "response": result})
+            for attempt in range(max_retries):
+                try:
+                    if attempt > 0:
+                        logger.info(f"Token {i+1} 第{attempt+1}次重试...")
+                        time.sleep(retry_delay * attempt)  # 递增延迟
+                    else:
+                        logger.info(f"发送通知到token {i+1}/{len(self.sendkeys)}: {sendkey[:10]}...")
                     
-            except requests.exceptions.RequestException as e:
-                logger.error(f"Token {i+1} 发送异常: {e}")
-                results.append({"token_index": i+1, "success": False, "error": str(e)})
+                    # 使用更短的超时时间，避免长时间卡死
+                    response = requests.post(url, data=data, timeout=5)
+                    result = response.json()
+                    
+                    if result.get("code") == 0:
+                        logger.info(f"Token {i+1} 发送成功")
+                        return {"token_index": i+1, "success": True, "response": result, "attempts": attempt+1}
+                    else:
+                        error_msg = result.get("message", "未知错误")
+                        if attempt == max_retries - 1:  # 最后一次尝试
+                            logger.error(f"Token {i+1} 发送失败: {error_msg}")
+                            return {"token_index": i+1, "success": False, "error": error_msg, "response": result, "attempts": attempt+1}
+                        else:
+                            logger.warning(f"Token {i+1} 发送失败，准备重试: {error_msg}")
+                            
+                except requests.exceptions.Timeout:
+                    if attempt == max_retries - 1:
+                        logger.error(f"Token {i+1} 请求超时，已重试{max_retries}次")
+                        return {"token_index": i+1, "success": False, "error": "请求超时", "attempts": attempt+1}
+                    else:
+                        logger.warning(f"Token {i+1} 请求超时，准备重试...")
+                        
+                except requests.exceptions.RequestException as e:
+                    if attempt == max_retries - 1:
+                        logger.error(f"Token {i+1} 发送异常: {e}")
+                        return {"token_index": i+1, "success": False, "error": str(e), "attempts": attempt+1}
+                    else:
+                        logger.warning(f"Token {i+1} 发送异常，准备重试: {e}")
+                        
+            # 理论上不会到达这里
+            return {"token_index": i+1, "success": False, "error": "未知错误", "attempts": max_retries}
+        
+        # 使用线程池并发发送（带整体超时控制）
+        overall_timeout = 30  # 整体超时30秒，防止无限等待
+        start_time = time.time()
+        
+        try:
+            with ThreadPoolExecutor(max_workers=min(len(self.sendkeys), 10)) as executor:
+                # 提交所有发送任务
+                future_to_token = {executor.submit(send_to_single_token, (i, sendkey)): i 
+                                 for i, sendkey in enumerate(self.sendkeys)}
+                
+                # 收集结果（带超时控制）
+                for future in as_completed(future_to_token, timeout=overall_timeout):
+                    try:
+                        # 为每个future设置超时
+                        result = future.result(timeout=5)
+                        results.append(result)
+                        if result["success"]:
+                            success_count += 1
+                            
+                        # 检查是否超过整体超时
+                        if time.time() - start_time > overall_timeout:
+                            logger.warning("整体发送超时，停止等待剩余任务")
+                            break
+                            
+                    except TimeoutError:
+                        token_index = future_to_token[future] + 1
+                        logger.error(f"Token {token_index} 任务执行超时")
+                        results.append({"token_index": token_index, "success": False, "error": "任务执行超时"})
+                    except Exception as e:
+                        token_index = future_to_token[future] + 1
+                        logger.error(f"Token {token_index} 发送任务异常: {e}")
+                        results.append({"token_index": token_index, "success": False, "error": str(e)})
+                        
+        except TimeoutError:
+            logger.error(f"整体发送操作超时({overall_timeout}秒)，强制结束")
+            # 为未完成的任务添加超时结果
+            completed_tokens = {r.get("token_index") for r in results}
+            for i in range(len(self.sendkeys)):
+                if (i + 1) not in completed_tokens:
+                    results.append({"token_index": i+1, "success": False, "error": "整体操作超时"})
+        except Exception as e:
+            logger.error(f"线程池执行异常: {e}")
+            # 确保所有token都有结果
+            completed_tokens = {r.get("token_index") for r in results}
+            for i in range(len(self.sendkeys)):
+                if (i + 1) not in completed_tokens:
+                    results.append({"token_index": i+1, "success": False, "error": f"线程池异常: {str(e)}"})
         
         # 返回群发结果
         overall_success = success_count > 0

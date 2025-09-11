@@ -552,7 +552,7 @@ class WebSocketMonitor:
         return datetime.now() - self.last_alert_time[symbol] > self.alert_cooldown
         
     async def _send_alert(self, alert: PriceAlert):
-        """发送警报通知"""
+        """发送警报通知（异步非阻塞）"""
         try:
             # 构建通知消息
             if alert.alert_type == 'fund_inflow':
@@ -634,24 +634,44 @@ class WebSocketMonitor:
 
 {alert.message}"""
             
-            # 发送Server酱通知（如果配置了）
+            # 异步发送Server酱通知（如果配置了）
             if self.notifier:
-                success = self.notifier.send_notification(title, content)
-                
-                if success:
-                    logger.info(f"实时警报发送成功: {alert.symbol} - {alert.alert_type}")
-                else:
-                    logger.error(f"实时警报发送失败: {alert.symbol} - {alert.alert_type}")
+                # 使用asyncio.create_task实现真正的异步非阻塞发送
+                asyncio.create_task(self._send_notification_async(title, content, alert.symbol, alert.alert_type))
+                logger.info(f"实时警报已提交发送: {alert.symbol} - {alert.alert_type}")
             else:
                 logger.info(f"实时警报（仅控制台）: {alert.symbol} - {alert.alert_type}")
                 print(f"\n🚨 {title}")
                 print(content)
                 
-            # 保存警报到数据库
-            self._save_alert_to_db(alert)
+            # 异步保存警报到数据库
+            asyncio.create_task(self._save_alert_to_db_async(alert))
             
         except Exception as e:
             logger.error(f"发送警报失败: {e}")
+            
+    async def _send_notification_async(self, title: str, content: str, symbol: str, alert_type: str):
+        """异步发送通知"""
+        try:
+            # 在线程池中执行同步的通知发送
+            loop = asyncio.get_event_loop()
+            success = await loop.run_in_executor(None, self.notifier.send_notification, title, content)
+            
+            if success:
+                logger.info(f"实时警报发送成功: {symbol} - {alert_type}")
+            else:
+                logger.error(f"实时警报发送失败: {symbol} - {alert_type}")
+        except Exception as e:
+            logger.error(f"异步发送通知失败: {e}")
+            
+    async def _save_alert_to_db_async(self, alert: PriceAlert):
+        """异步保存警报到数据库"""
+        try:
+            # 在线程池中执行数据库操作
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self._save_alert_to_db, alert)
+        except Exception as e:
+            logger.error(f"异步保存警报到数据库失败: {e}")
             
     def _save_alert_to_db(self, alert: PriceAlert):
         """保存警报到数据库"""
