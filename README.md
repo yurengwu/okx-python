@@ -27,7 +27,27 @@
 
 ## 🛠️ 安装步骤
 
-### 1. 克隆或下载项目
+### 方式一：Docker部署（推荐）
+
+```bash
+# 1. 克隆项目
+git clone <repository-url>
+cd okx-py
+
+# 2. 配置环境变量
+cp env.example .env
+# 编辑.env文件，填入API密钥
+
+# 3. 一键启动
+chmod +x docker-local.sh
+./docker-local.sh
+```
+
+详细Docker部署指南请参考：[DOCKER_LOCAL_USAGE.md](DOCKER_LOCAL_USAGE.md)
+
+### 方式二：本地安装
+
+#### 1. 克隆或下载项目
 
 ```bash
 # 如果是从git克隆
@@ -37,7 +57,7 @@ cd okx-trading-analyzer
 # 或者直接在当前目录使用
 ```
 
-### 2. 安装依赖
+#### 2. 安装依赖
 
 ```bash
 pip install -r requirements.txt

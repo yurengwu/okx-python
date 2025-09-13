@@ -54,6 +54,12 @@ RUN chmod +x main.py
 # 创建非root用户
 RUN useradd --create-home --shell /bin/bash app && \
     chown -R app:app /app
+
+# 确保数据库文件有写权限
+RUN touch /app/trading_data.db && \
+    chown app:app /app/trading_data.db && \
+    chmod 664 /app/trading_data.db
+
 USER app
 
 # 暴露端口（如果需要Web服务）
