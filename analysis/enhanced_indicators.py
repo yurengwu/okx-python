@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Tuple, Optional
 from loguru import logger
-import talib
+import ta
 
 class EnhancedTechnicalIndicators:
     """增强技术指标计算类"""
@@ -69,15 +69,18 @@ class EnhancedTechnicalIndicators:
     def calculate_moving_averages(close: np.ndarray) -> Dict:
         """计算移动平均线"""
         try:
+            # 转换为pandas Series以便使用ta库
+            close_series = pd.Series(close)
+            
             return {
-                'sma_5': talib.SMA(close, timeperiod=5)[-1] if len(close) >= 5 else None,
-                'sma_10': talib.SMA(close, timeperiod=10)[-1] if len(close) >= 10 else None,
-                'sma_20': talib.SMA(close, timeperiod=20)[-1] if len(close) >= 20 else None,
-                'sma_50': talib.SMA(close, timeperiod=50)[-1] if len(close) >= 50 else None,
-                'sma_200': talib.SMA(close, timeperiod=200)[-1] if len(close) >= 200 else None,
-                'ema_12': talib.EMA(close, timeperiod=12)[-1] if len(close) >= 12 else None,
-                'ema_26': talib.EMA(close, timeperiod=26)[-1] if len(close) >= 26 else None,
-                'ema_50': talib.EMA(close, timeperiod=50)[-1] if len(close) >= 50 else None,
+                'sma_5': ta.trend.sma_indicator(close_series, window=5).iloc[-1] if len(close) >= 5 else None,
+                'sma_10': ta.trend.sma_indicator(close_series, window=10).iloc[-1] if len(close) >= 10 else None,
+                'sma_20': ta.trend.sma_indicator(close_series, window=20).iloc[-1] if len(close) >= 20 else None,
+                'sma_50': ta.trend.sma_indicator(close_series, window=50).iloc[-1] if len(close) >= 50 else None,
+                'sma_200': ta.trend.sma_indicator(close_series, window=200).iloc[-1] if len(close) >= 200 else None,
+                'ema_12': ta.trend.ema_indicator(close_series, window=12).iloc[-1] if len(close) >= 12 else None,
+                'ema_26': ta.trend.ema_indicator(close_series, window=26).iloc[-1] if len(close) >= 26 else None,
+                'ema_50': ta.trend.ema_indicator(close_series, window=50).iloc[-1] if len(close) >= 50 else None,
             }
         except Exception as e:
             logger.error(f"计算移动平均线失败: {e}")
@@ -97,8 +100,9 @@ class EnhancedTechnicalIndicators:
                 logger.warning("RSI计算数据包含无效值")
                 close = np.nan_to_num(close, nan=np.nanmean(close), posinf=np.nanmax(close[np.isfinite(close)]), neginf=np.nanmin(close[np.isfinite(close)]))
             
-            rsi_14 = talib.RSI(close, timeperiod=14)[-1]
-            rsi_21 = talib.RSI(close, timeperiod=21)[-1] if len(close) >= 21 else rsi_14
+            close_series = pd.Series(close)
+            rsi_14 = ta.momentum.rsi(close_series, window=14).iloc[-1]
+            rsi_21 = ta.momentum.rsi(close_series, window=21).iloc[-1] if len(close) >= 21 else rsi_14
             
             # 边界值处理
             rsi_14 = np.clip(rsi_14, 0.0, 100.0) if not np.isnan(rsi_14) else 50.0
@@ -126,12 +130,15 @@ class EnhancedTechnicalIndicators:
                 logger.warning("MACD计算数据包含无效值")
                 close = np.nan_to_num(close, nan=np.nanmean(close), posinf=np.nanmax(close[np.isfinite(close)]), neginf=np.nanmin(close[np.isfinite(close)]))
             
-            macd, macd_signal, macd_hist = talib.MACD(close, fastperiod=12, slowperiod=26, signalperiod=9)
+            close_series = pd.Series(close)
+            macd_line = ta.trend.macd(close_series, window_slow=26, window_fast=12)
+            macd_signal_line = ta.trend.macd_signal(close_series, window_slow=26, window_fast=12, window_sign=9)
+            macd_hist = ta.trend.macd_diff(close_series, window_slow=26, window_fast=12, window_sign=9)
             
             # 处理计算结果
-            macd_val = macd[-1] if len(macd) > 0 and not np.isnan(macd[-1]) else 0.0
-            signal_val = macd_signal[-1] if len(macd_signal) > 0 and not np.isnan(macd_signal[-1]) else 0.0
-            hist_val = macd_hist[-1] if len(macd_hist) > 0 and not np.isnan(macd_hist[-1]) else 0.0
+            macd_val = macd_line.iloc[-1] if len(macd_line) > 0 and not np.isnan(macd_line.iloc[-1]) else 0.0
+            signal_val = macd_signal_line.iloc[-1] if len(macd_signal_line) > 0 and not np.isnan(macd_signal_line.iloc[-1]) else 0.0
+            hist_val = macd_hist.iloc[-1] if len(macd_hist) > 0 and not np.isnan(macd_hist.iloc[-1]) else 0.0
             
             # 数值范围检查（防止异常大的值）
             max_val = np.abs(np.nanmean(close)) * 0.5  # 设置合理的上限
@@ -155,11 +162,14 @@ class EnhancedTechnicalIndicators:
             if len(close) < period:
                 return {'bb_upper': None, 'bb_middle': None, 'bb_lower': None, 'bb_width': None}
             
-            bb_upper, bb_middle, bb_lower = talib.BBANDS(close, timeperiod=period, nbdevup=std_dev, nbdevdn=std_dev)
+            close_series = pd.Series(close)
+            bb_upper = ta.volatility.bollinger_hband(close_series, window=period, window_dev=std_dev)
+            bb_middle = ta.volatility.bollinger_mavg(close_series, window=period)
+            bb_lower = ta.volatility.bollinger_lband(close_series, window=period, window_dev=std_dev)
             
-            upper = bb_upper[-1] if not np.isnan(bb_upper[-1]) else None
-            middle = bb_middle[-1] if not np.isnan(bb_middle[-1]) else None
-            lower = bb_lower[-1] if not np.isnan(bb_lower[-1]) else None
+            upper = bb_upper.iloc[-1] if not np.isnan(bb_upper.iloc[-1]) else None
+            middle = bb_middle.iloc[-1] if not np.isnan(bb_middle.iloc[-1]) else None
+            lower = bb_lower.iloc[-1] if not np.isnan(bb_lower.iloc[-1]) else None
             
             # 计算布林带宽度
             width = None
@@ -192,15 +202,19 @@ class EnhancedTechnicalIndicators:
                     arr = np.nan_to_num(arr, nan=np.nanmean(arr), posinf=np.nanmax(arr[np.isfinite(arr)]), neginf=np.nanmin(arr[np.isfinite(arr)]))
             
             # 计算K值
-            lowest_low = talib.MIN(low, timeperiod=period)
-            highest_high = talib.MAX(high, timeperiod=period)
+            low_series = pd.Series(low)
+            high_series = pd.Series(high)
+            lowest_low = low_series.rolling(window=period).min()
+            highest_high = high_series.rolling(window=period).max()
             
             # 防止除零错误
             denominator = highest_high - lowest_low
-            denominator = np.where(denominator == 0, 1e-8, denominator)  # 避免除零
+            denominator = denominator.fillna(1e-8)  # 避免除零
+            denominator = denominator.replace(0, 1e-8)
             
-            rsv = (close - lowest_low) / denominator * 100
-            rsv = np.clip(rsv, 0, 100)  # 限制RSV在0-100之间
+            close_series = pd.Series(close)
+            rsv = (close_series - lowest_low) / denominator * 100
+            rsv = rsv.clip(0, 100)  # 限制RSV在0-100之间
             
             # 使用简单移动平均计算K和D
             k_values = []
@@ -210,8 +224,9 @@ class EnhancedTechnicalIndicators:
             d = 50.0  # 初始D值
             
             for i in range(len(rsv)):
-                if not np.isnan(rsv[i]) and np.isfinite(rsv[i]):
-                    k = (2/3) * k + (1/3) * rsv[i]
+                rsv_val = rsv.iloc[i] if hasattr(rsv, 'iloc') else rsv[i]
+                if not np.isnan(rsv_val) and np.isfinite(rsv_val):
+                    k = (2/3) * k + (1/3) * rsv_val
                     d = (2/3) * d + (1/3) * k
                 # 边界值处理
                 k = np.clip(k, 0.0, 100.0)
@@ -242,10 +257,13 @@ class EnhancedTechnicalIndicators:
             if len(close) < period:
                 return {'williams_r': None}
             
-            williams_r = talib.WILLR(high, low, close, timeperiod=period)
+            high_series = pd.Series(high)
+            low_series = pd.Series(low)
+            close_series = pd.Series(close)
+            williams_r = ta.momentum.williams_r(high_series, low_series, close_series, lbp=period)
             
             return {
-                'williams_r': williams_r[-1] if not np.isnan(williams_r[-1]) else None,
+                'williams_r': williams_r.iloc[-1] if not np.isnan(williams_r.iloc[-1]) else None,
             }
         except Exception as e:
             logger.error(f"计算威廉指标失败: {e}")
@@ -258,10 +276,13 @@ class EnhancedTechnicalIndicators:
             if len(close) < period:
                 return {'cci': None}
             
-            cci = talib.CCI(high, low, close, timeperiod=period)
+            high_series = pd.Series(high)
+            low_series = pd.Series(low)
+            close_series = pd.Series(close)
+            cci = ta.trend.cci(high_series, low_series, close_series, window=period)
             
             return {
-                'cci': cci[-1] if not np.isnan(cci[-1]) else None,
+                'cci': cci.iloc[-1] if not np.isnan(cci.iloc[-1]) else None,
             }
         except Exception as e:
             logger.error(f"计算CCI失败: {e}")
@@ -282,8 +303,11 @@ class EnhancedTechnicalIndicators:
                     logger.warning(f"ATR计算{name}数据包含无效值")
                     arr = np.nan_to_num(arr, nan=np.nanmean(arr), posinf=np.nanmax(arr[np.isfinite(arr)]), neginf=np.nanmin(arr[np.isfinite(arr)]))
             
-            atr = talib.ATR(high, low, close, timeperiod=period)
-            atr_value = atr[-1] if len(atr) > 0 and not np.isnan(atr[-1]) else 0.0
+            high_series = pd.Series(high)
+            low_series = pd.Series(low)
+            close_series = pd.Series(close)
+            atr = ta.volatility.average_true_range(high_series, low_series, close_series, window=period)
+            atr_value = atr.iloc[-1] if len(atr) > 0 and not np.isnan(atr.iloc[-1]) else 0.0
             
             # 确保ATR值为正数
             atr_value = max(0.0, atr_value)
@@ -311,7 +335,8 @@ class EnhancedTechnicalIndicators:
                 return {'volume_sma': None, 'volume_ratio': None, 'obv': None}
             
             # 成交量移动平均
-            volume_sma = talib.SMA(volume, timeperiod=20)[-1] if len(volume) >= 20 else None
+            volume_series = pd.Series(volume)
+            volume_sma = volume_series.rolling(window=20).mean().iloc[-1] if len(volume) >= 20 else None
             
             # 成交量比率
             volume_ratio = None
@@ -319,7 +344,8 @@ class EnhancedTechnicalIndicators:
                 volume_ratio = volume[-1] / volume_sma
             
             # OBV指标
-            obv = talib.OBV(close, volume)[-1] if len(close) >= 1 else None
+            close_series = pd.Series(close)
+            obv = ta.volume.on_balance_volume(close_series, volume_series).iloc[-1] if len(close) >= 1 else None
             
             return {
                 'volume_sma': volume_sma,
@@ -366,18 +392,21 @@ class EnhancedTechnicalIndicators:
             
             # ROC (Rate of Change)
             if len(close) >= 10:
-                roc = talib.ROC(close, timeperiod=10)
-                indicators['roc_10'] = roc[-1] if not np.isnan(roc[-1]) else None
+                close_series = pd.Series(close)
+                roc = ta.momentum.roc(close_series, window=10)
+                indicators['roc_10'] = roc.iloc[-1] if not np.isnan(roc.iloc[-1]) else None
             
             # 动量指标
             if len(close) >= 10:
-                momentum = talib.MOM(close, timeperiod=10)
-                indicators['momentum_10'] = momentum[-1] if not np.isnan(momentum[-1]) else None
+                close_series = pd.Series(close)
+                momentum = ta.momentum.roc(close_series, window=10)  # ROC可以作为动量指标
+                indicators['momentum_10'] = momentum.iloc[-1] if not np.isnan(momentum.iloc[-1]) else None
             
             # TRIX指标
             if len(close) >= 30:
-                trix = talib.TRIX(close, timeperiod=14)
-                indicators['trix'] = trix[-1] if not np.isnan(trix[-1]) else None
+                close_series = pd.Series(close)
+                trix = ta.trend.trix(close_series, window=14)
+                indicators['trix'] = trix.iloc[-1] if not np.isnan(trix.iloc[-1]) else None
             
             return indicators
             
@@ -393,19 +422,27 @@ class EnhancedTechnicalIndicators:
             
             # ADX (平均趋向指数)
             if len(close) >= 14:
-                adx = talib.ADX(high, low, close, timeperiod=14)
-                indicators['adx'] = adx[-1] if not np.isnan(adx[-1]) else None
+                high_series = pd.Series(high)
+                low_series = pd.Series(low)
+                close_series = pd.Series(close)
+                adx = ta.trend.adx(high_series, low_series, close_series, window=14)
+                indicators['adx'] = adx.iloc[-1] if not np.isnan(adx.iloc[-1]) else None
             
             # 抛物线SAR
             if len(close) >= 2:
-                sar = talib.SAR(high, low, acceleration=0.02, maximum=0.2)
-                indicators['sar'] = sar[-1] if not np.isnan(sar[-1]) else None
+                high_series = pd.Series(high)
+                low_series = pd.Series(low)
+                sar = ta.trend.psar_up(high_series, low_series, close_series, step=0.02, max_step=0.2)
+                indicators['sar'] = sar.iloc[-1] if not np.isnan(sar.iloc[-1]) else None
             
             # Aroon指标
             if len(close) >= 14:
-                aroon_down, aroon_up = talib.AROON(high, low, timeperiod=14)
-                indicators['aroon_up'] = aroon_up[-1] if not np.isnan(aroon_up[-1]) else None
-                indicators['aroon_down'] = aroon_down[-1] if not np.isnan(aroon_down[-1]) else None
+                high_series = pd.Series(high)
+                low_series = pd.Series(low)
+                aroon_up = ta.trend.aroon_up(high_series, low_series, window=14)
+                aroon_down = ta.trend.aroon_down(high_series, low_series, window=14)
+                indicators['aroon_up'] = aroon_up.iloc[-1] if not np.isnan(aroon_up.iloc[-1]) else None
+                indicators['aroon_down'] = aroon_down.iloc[-1] if not np.isnan(aroon_down.iloc[-1]) else None
             
             return indicators
             
